@@ -1,0 +1,13 @@
+{
+    "id": "appMaker",
+    "name": "App Maker",
+    "version": "0.0.1",
+    "description": "Create mini apps from openSBP code",
+    "author": "Brian Owen",
+    "license": "MIT",
+    "icon": "assets/Icon.png",
+    "icon_color": "#383AB6",
+    "index": "index.html",
+    "keywords": ["openSBP", "FabMo", "editor"]
+  }
+  
