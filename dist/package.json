@@ -10,7 +10,8 @@
   "id": "appMaker",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "postbuild": "node scripts/package.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
+    "archiver": "^7.0.1",
     "vite": "^7.1.5",
     "vite-plugin-monaco-editor": "^1.1.0",
     "vite-plugin-static-copy": "^3.1.2"

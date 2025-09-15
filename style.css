@@ -1,0 +1,206 @@
+/* === Yellow legal pad sheet === */
+.legalpad {
+    --label-col: 180px;     /* tweak label column width */
+    --input-width: 220px;   /* tweak input column width */
+  
+    position: relative;
+    border-radius: 8px;
+    background: #fdf3b2;                 /* paper yellow */
+    box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.06);
+    overflow: hidden;
+    border: 1px solid #e9df9a;
+  }
+  
+  /* red margin line */
+  .legalpad::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 72px;                           /* margin width */
+    width: 2px;
+    background: #d04545;                  /* red rule */
+    opacity: .75;
+  }
+  
+  /* header strip */
+  .legalpad-header {
+    padding: 12px 16px 10px 88px;         /* indent past red margin */
+    background: linear-gradient(#fff7c9, #fdf3b2);
+    border-bottom: 1px solid #e9df9a;
+  }
+  .legalpad-title { font-weight: 700; font-size: 24px; color: #1f2937; line-height: 1.2; }
+  .legalpad-desc  { margin-top: 2px; font-size: 12px; color: #6b7280; }
+  
+  /* body with blue ruling every 40px */
+  .legalpad-body {
+    position: relative;
+    padding: 0 16px 8px 88px;             /* indent past red margin */
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 38px,
+      #a2c5ff 40px                         /* single blue rule */
+    );
+  }
+  
+  /* === PERFECT 2-COLUMN ALIGNMENT ===
+     One row = one ruled band, both columns left-justified */
+  .legalpad-row {
+    display: grid;
+    grid-template-columns: var(--label-col) var(--input-width);
+    column-gap: 12px;
+    align-items: center;                  /* center contents in the 40px band */
+    justify-items: start;                 /* left-justify both columns */
+    height: 40px;                         /* match ruling step */
+    line-height: 40px;                    /* centers label text optically */
+  }
+  
+  /* Label column (fixed width) */
+  .legalpad-label {
+    font-size: 18px;
+    font-weight: 500;
+    color: #2d2d2d;
+    white-space: nowrap;
+    padding-right: 10px;
+    justify-self: start;
+  }
+  
+  /* Input column (fixed width) */
+  .legalpad-input {
+    width: var(--input-width);
+    max-width: var(--input-width);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  
+  .legalpad-input > input,
+  .legalpad-input > select {
+    width: var(--input-width);
+    max-width: var(--input-width);
+    height: 38px;                         /* your visual balance */
+    line-height: 32px;
+    padding: 0 8px;
+    border: 1.5px solid #a29653;
+    border-radius: 0;
+    background: #fdf3b2;
+    margin-bottom: 1px;
+    font-size: 18px;
+    color: #2d2d2d;
+  }
+  
+  /* Checkboxes: don't stretch, still align to same left edge */
+  .legalpad-input > input[type="checkbox"] {
+    width: 16px; height: 16px; margin: 0; line-height: 1;
+  }
+  
+  /* action area */
+  .legalpad-actions {
+    padding: 10px 16px 12px 88px;
+    border-top: 1px dashed #e2d68c;
+    display: grid;
+    gap: 8px;
+  }
+  
+  /* buttons with “paper” vibe */
+  .btn-paper {
+    appearance: none;
+    border: 1px solid #c6b96d;
+    background: #fff8d6;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .btn-paper:hover { background: #fff2b8; }
+  .btn-primary {
+    border-color: #01ee34;
+    background: #01ee34; color: #000000;
+  }
+  .btn-primary:hover { background: #276749; }
+
+  /* === Typography overrides for old-school look === */
+.legalpad,
+.legalpad-label,
+.legalpad-input input,
+.legalpad-input select,
+.legalpad-title,
+.legalpad-desc {
+  font-family: "Segoe UI Historic", "Segoe UI", "Courier New", Courier, serif;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  font-smooth: never;            /* non-standard, some browsers respect */
+  text-rendering: optimizeSpeed; /* hints to skip antialias tricks */
+}
+
+/* Labels a little heavier, like handwriting */
+.legalpad-label {
+  font-weight: 600;
+}
+
+/* Inputs: slightly heavier stroke to mimic old dot-matrix/typewriter */
+.legalpad-input > input,
+.legalpad-input > select {
+  font-weight: 500;
+  letter-spacing: 0.3px;          /* subtle spacing = less "modern" */
+}
+/* === Legal pad corner fold === */
+/* === Legal pad corner fold === */
+.legalpad-corner {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 80px;
+    height: 80px;
+    overflow: hidden;
+    pointer-events: none; /* don't block clicks */
+  }
+  
+  /* the folded triangle */
+  .legalpad-corner::before {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    border-bottom: 60px solid #fdf3b2;   /* front of the sheet */
+    border-right: 60px solid transparent;
+    z-index: 1;
+  }
+  
+  /* the shadow for depth */
+  .legalpad-corner::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    border-bottom: 60px solid rgba(0,0,0,0.15); /* shadow */
+    border-right: 60px solid transparent;
+    transform: translate(3px, -3px);  /* offset shadow inward */
+    filter: blur(4px);
+    z-index: 0;
+  }
+  
+  
+  /* Reset button slides out from the corner */
+  .legalpad-reset {
+    position: absolute;
+    bottom: 8px;
+    left: 12px;
+    z-index: 2;
+    appearance: none;
+    border: none;
+    background: none;
+    padding: 0px 0px;
+    border-radius: 4px;
+    font-size: 14px;
+    color: blue;
+    font-family: "Segoe UI", serif;
+    cursor: pointer;
+  }
+  .legalpad-reset:hover {
+    color: red;
+  }
+  
