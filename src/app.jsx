@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
+import "../style.css"; // <-- your external CSS file
 
 /* ---------------------- localStorage helpers ---------------------- */
 const LS_CODE_KEY = "fabmo_sbp_code";
@@ -64,6 +65,19 @@ const VAR_REGEX = /&([A-Za-z][A-Za-z0-9_]*)/g;
 const DIRECTIVE_REGEX = /^\s*[';]\s*@input\s+(&[A-Za-z][A-Za-z0-9_]*)\s+([^\r\n]*)/gmi;
 // section headers: "# Title" with optional leading comment marker
 const SECTION_HEADER = /^\s*(?:[';]\s*)?#\s*(.+?)\s*$/;
+// Accept: ' @checkmark &VarName   OR   ; @checkmark VarName (also allows $VarName)
+const CHECKMARK_REGEX = /^\s*[';]\s*@checkmark\s+(&?\$?[A-Za-z][A-Za-z0-9_]*)\s*$/gmi;
+
+function parseCheckmarksIn(text) {
+  const list = [];
+  let m;
+  while ((m = CHECKMARK_REGEX.exec(text))) {
+    const raw = m[1].trim();
+    const name = raw.replace(/^[$&]/, ""); // normalize: strip leading & or $
+    list.push(name);
+  }
+  return list;
+}
 
 function toBool(v) {
   if (typeof v === "boolean") return v;
@@ -126,6 +140,24 @@ function parseDirectivesIn(text) {
   }
   return map;
 }
+
+async function getFabMoConfigVars() {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && window.fabmo?.getConfig) {
+      window.fabmo.getConfig((err, data) => {
+        if (err) {
+          console.error("FabMo getConfig error:", err);
+          resolve({});
+        } else {
+          resolve((data && data.opensbp && data.opensbp.variables) || {});
+        }
+      });
+    } else {
+      resolve({});
+    }
+  });
+}
+
 function extractVariables(code) {
   const set = new Set(); let m;
   while ((m = VAR_REGEX.exec(code))) set.add(m[1]);
@@ -161,19 +193,126 @@ async function runSbpOnFabMo(fullSbpCode) {
   return await res.text();
 }
 
-/* ====================== Component ====================== */
+/* ---------------------- Section Card (prevents stray `sec`) ---------------------- */
+function SectionCard({ sec, values, setValues, running, runSection, buildPreambleForSection, isSectionComplete }) {
+  return (
+    <div className="legalpad">
+      {/* Header with status icon */}
+      <div className="legalpad-binding">
+  <span
+    className="status-icon"
+    data-complete={isSectionComplete(sec) ? "1" : "0"}
+    title={isSectionComplete(sec) ? "Complete" : "Not completed"}
+  />
+  <h3 className="legalpad-binding-title">
+    {sec.title || "Untitled Section"}
+  </h3>
+</div>
+
+
+      {/* Body */}
+      <div className="legalpad-body">
+        <form onSubmit={(e)=>e.preventDefault()}>
+          {sec.fields.length === 0 && (
+            <div className="legalpad-row">
+              <span className="legalpad-label">Note</span>
+              <div className="text-sm text-gray-700">No variables found in this section.</div>
+            </div>
+          )}
+          {sec.fields.map((f) => (
+            <div className="legalpad-row" key={f.name}>
+              <label className="legalpad-label" htmlFor={`v-${sec.id}-${f.name}`}>{f.label}</label>
+              <div className="legalpad-input">
+                {f.options ? (
+                  <select
+                    id={`v-${sec.id}-${f.name}`}
+                    value={String(values[`${sec.id}::${f.name}`] ?? "")}
+                    onChange={(e) => setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: e.target.value }))}
+                  >
+                    {f.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : f.type === "checkbox" ? (
+                  <input
+                    id={`v-${sec.id}-${f.name}`}
+                    type="checkbox"
+                    checked={Boolean(values[`${sec.id}::${f.name}`])}
+                    onChange={(e) => setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: e.target.checked }))}
+                  />
+                ) : (
+                  <input
+                    id={`v-${sec.id}-${f.name}`}
+                    type={f.type}
+                    inputMode={f.type === "number" ? "decimal" : undefined}
+                    value={values[`${sec.id}::${f.name}`] ?? ""}
+                    onChange={(e) => {
+                      const val = f.type === "number"
+                        ? (e.target.value === "" ? "" : Number(e.target.value))
+                        : e.target.value;
+                      setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: val }));
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </form>
+      </div>
+
+      {/* Actions */}
+      <div className="legalpad-actions">
+        <button
+          disabled={running || (!sec.fields.length && sec.text.trim() === "")}
+          onClick={() => runSection(sec)}
+          className={`btn-primary ${running ? "opacity-60 cursor-not-allowed" : ""}`}
+          title="Send this section to FabMo"
+        >
+          {running ? "Running..." : `Run: ${sec.title}`}
+        </button>
+
+        <details className="text-sm">
+          <summary className="cursor-pointer">Show preamble for this section</summary>
+          <pre className="bg-white/70 p-2 rounded border border-yellow-200 overflow-auto max-h-[24vh] text-xs whitespace-pre-wrap">
+{buildPreambleForSection(sec).join("\n")}
+          </pre>
+        </details>
+      </div>
+
+      {/* Dog-ear + Reset */}
+      <div className="legalpad-corner" />
+      <button
+        type="button"
+        className="legalpad-reset"
+        onClick={() => {
+          setValues((prev) => {
+            const next = { ...prev };
+            sec.fields.forEach((f) => {
+              next[`${sec.id}::${f.name}`] =
+                f.type === "checkbox" ? (f.default ?? false) : (f.default ?? "");
+            });
+            return next;
+          });
+        }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
+/* ====================== Main Component ====================== */
 export default function FabMoOpenSBPApp() {
   const [code, setCode] = useState(() => loadLS(LS_CODE_KEY, DEFAULT_SNIPPET));
   const derivedTitle = useMemo(() => deriveTitleFromCode(code), [code]);
 
-  // Sections + models (directives, fields)
+  // Sections + models (directives, fields, checkmarks)
   const sections = useMemo(() => parseSections(code), [code]);
   const sectionModels = useMemo(() => {
     return sections.map(sec => {
       const directives = parseDirectivesIn(sec.text);
       const vars = extractVariables(sec.text);
       const fields = vars.map(v => ({ name: v, ...inferField(v, directives[v] || {}) }));
-      return { ...sec, directives, fields };
+      const checkVars = parseCheckmarksIn(sec.text);
+      return { ...sec, directives, fields, checkVars };
     });
   }, [sections]);
 
@@ -199,8 +338,30 @@ export default function FabMoOpenSBPApp() {
     });
   }, [sectionModels]);
 
+  // Persist code & values
   useEffect(() => saveLS(LS_CODE_KEY, code), [code]);
   useEffect(() => saveLS(LS_VALS_KEY, values), [values]);
+
+  // FabMo config variables for @checkmark
+  const [configVars, setConfigVars] = useState({});
+  useEffect(() => {
+    (async () => {
+      const vars = await getFabMoConfigVars();
+      setConfigVars(vars);
+    })();
+  }, []);
+
+  function isSectionComplete(sec) {
+    if (!sec.checkVars || sec.checkVars.length === 0) return false;
+    // True if ANY listed var exists and is non-zero (numeric). If not numeric, truthy counts.
+    return sec.checkVars.some((name) => {
+      const v = configVars?.[name];
+      if (v === undefined || v === null) return false;
+      const n = Number(v);
+      if (Number.isFinite(n)) return n !== 0;
+      return Boolean(v);
+    });
+  }
 
   // UI state
   const [running, setRunning] = useState(false);
@@ -243,9 +404,9 @@ export default function FabMoOpenSBPApp() {
     };
   }, [dragging]);
   const collapseLeft = () => setCollapsedLeft(true);
-  const expandLeft = () => { setCollapsedLeft(false); if (collapsedRight) setCollapsedRight(false); setLeftPct(lastLeftPctRef.current || 50); };
+  const expandLeft  = () => { setCollapsedLeft(false); if (collapsedRight) setCollapsedRight(false); setLeftPct(lastLeftPctRef.current || 50); };
   const collapseRight = () => setCollapsedRight(true);
-  const expandRight = () => { setCollapsedRight(false); if (collapsedLeft) setCollapsedLeft(false); setLeftPct(lastLeftPctRef.current || 50); };
+  const expandRight  = () => { setCollapsedRight(false); if (collapsedLeft) setCollapsedLeft(false); setLeftPct(lastLeftPctRef.current || 50); };
 
   // Helpers
   const hasVal = (v) => v !== "" && v !== null && v !== undefined;
@@ -271,6 +432,12 @@ export default function FabMoOpenSBPApp() {
       const toRun = `${pre}\n\n${sec.text}`;
       const res = await runSbpOnFabMo(toRun);
       setRunMsg(typeof res === "string" ? res : `Submitted: ${sec.title}`);
+
+      // refresh config so checkmarks update if your routine set variables
+      try {
+        const vars = await getFabMoConfigVars();
+        setConfigVars(vars);
+      } catch {}
     } catch (err) {
       setRunMsg(err?.message || String(err));
     } finally {
@@ -289,25 +456,14 @@ export default function FabMoOpenSBPApp() {
 
   return (
     <div className="max-w-7xl mx-auto p-4 space-y-4">
-      <style>{`
-        /* splitter + layout */
-        .split-resizable { position: relative; display: flex; gap: 0; width: 100%; min-height: 60vh; }
-        .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-        .divider { width: 6px; cursor: col-resize; background: linear-gradient(180deg,#e5e7eb,#cbd5e1); position: relative; z-index:2; }
-        .divider::after { content:''; position:absolute; inset:0; border-left:1px solid #cbd5e1; border-right:1px solid #cbd5e1; opacity:.6; }
-        .pane-header { display:flex; align-items:center; justify-content:space-between; padding:.5rem 0; }
-        .chev { font-weight:700; line-height:1; padding:2px 6px; border-radius:6px; border:1px solid #e5e7eb; background:#353366; color:#fff; }
-        .edge-tab { position:absolute; top:6px; padding:4px 8px; border-radius:6px; background:#f8fafc; border:1px solid #e5e7eb; z-index:3; }
-        .edge-tab:hover, .chev:hover { background:#eef2f7; color:#000; }
-      `}</style>
-
+      {/* Header */}
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold" style={{ color: "black" }}
             title={`Detected variables: ${detectedVars || "(none)"}`}>
           {derivedTitle || "FabMo openSBP App"}
         </h1>
         <div className="flex items-center gap-2 text-sm">
-          {/* header toggles if needed */}
+          {/* header controls could go here */}
         </div>
       </header>
 
@@ -316,113 +472,21 @@ export default function FabMoOpenSBPApp() {
         {/* LEFT (UI) */}
         <div className="pane" style={{ flex: collapsedLeft ? "0 0 0" : `0 0 ${leftPct}%` }}>
           <div className="pane-header">
-            <button className="chev" onClick={() => collapseLeft()} title="Hide UI">«</button>
+            <button className="chev" onClick={collapseLeft} title="Hide UI">«</button>
           </div>
 
           <div className="space-y-6">
             {sectionModels.map((sec) => (
-              <div key={sec.id} className="legalpad">
-                <div className="legalpad-header">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="legalpad-title">{sec.title || "Untitled Section"}</div>
-                      {sec.desc && <div className="legalpad-desc">{sec.desc}</div>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="legalpad-body">
-                  <form onSubmit={(e)=>e.preventDefault()}>
-                    {sec.fields.length === 0 && (
-                      <div className="legalpad-row">
-                        <span className="legalpad-label">Note</span>
-                        <div className="text-sm text-gray-700">No variables found in this section.</div>
-                      </div>
-                    )}
-
-                    {sec.fields.map((f) => (
-                      <div className="legalpad-row" key={f.name}>
-                        <label className="legalpad-label" htmlFor={`v-${sec.id}-${f.name}`}>
-                          {f.label}
-                        </label>
-                        <div className="legalpad-input">
-                          {f.options ? (
-                            <select
-                              id={`v-${sec.id}-${f.name}`}
-                              value={String(values[`${sec.id}::${f.name}`] ?? "")}
-                              onChange={(e) => setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: e.target.value }))}
-                            >
-                              {f.options.map((opt) => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          ) : f.type === "checkbox" ? (
-                            <input
-                              id={`v-${sec.id}-${f.name}`}
-                              type="checkbox"
-                              checked={Boolean(values[`${sec.id}::${f.name}`])}
-                              onChange={(e) => setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: e.target.checked }))}
-                            />
-                          ) : (
-                            <input
-                              id={`v-${sec.id}-${f.name}`}
-                              type={f.type}
-                              inputMode={f.type === "number" ? "decimal" : undefined}
-                              value={values[`${sec.id}::${f.name}`] ?? ""}
-                              min={f.min ?? undefined}
-                              max={f.max ?? undefined}
-                              step={f.step ?? (f.type === "number" ? 0.01 : undefined)}
-                              onChange={(e) => {
-                                const val = f.type === "number"
-                                  ? (e.target.value === "" ? "" : Number(e.target.value))
-                                  : e.target.value;
-                                setValues((v) => ({ ...v, [`${sec.id}::${f.name}`]: val }));
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </form>
-                </div>
-
-                <div className="legalpad-actions">
-                  <button
-                    disabled={running || (!sec.fields.length && sec.text.trim() === "")}
-                    onClick={() => runSection(sec)}
-                    className={`btn-primary ${running ? "opacity-60 cursor-not-allowed" : ""}`}
-                    title="Send this section to FabMo"
-                  >
-                    {running ? "Running..." : `Run: ${sec.title}`}
-                  </button>
-
-                  <details className="text-sm">
-                    <summary className="cursor-pointer">Show preamble for this section</summary>
-                    <pre className="bg-white/70 p-2 rounded border border-yellow-200 overflow-auto max-h-[24vh] text-xs whitespace-pre-wrap">
-{buildPreambleForSection(sec).join("\n")}
-                    </pre>
-                  </details>
-                </div>
-
-                {/* dog-eared corner + reset lives inside each card so 'sec' is in scope */}
-                <div className="legalpad-corner" />
-                <button
-                  type="button"
-                  className="legalpad-reset"
-                  onClick={() => {
-                    setValues((prev) => {
-                      const next = { ...prev };
-                      sec.fields.forEach((f) => {
-                        next[`${sec.id}::${f.name}`] =
-                          f.type === "checkbox" ? (f.default ?? false) : (f.default ?? "");
-                      });
-                      return next;
-                    });
-                  }}
-                >
-                  Reset
-                </button>
-              </div>
+              <SectionCard
+                key={sec.id}
+                sec={sec}
+                values={values}
+                setValues={setValues}
+                running={running}
+                runSection={runSection}
+                buildPreambleForSection={buildPreambleForSection}
+                isSectionComplete={isSectionComplete}
+              />
             ))}
           </div>
         </div>
@@ -442,14 +506,14 @@ export default function FabMoOpenSBPApp() {
                 onClick={() => setCode(DEFAULT_SNIPPET)}
                 title="Replace with sample"
               >Load Sample</button>
-              <button className="chev" onClick={() => collapseRight()} title="Hide Editor">»</button>
+              <button className="chev" onClick={collapseRight} title="Hide Editor">»</button>
             </div>
           </div>
 
           <Editor
             height="calc(100vh - 240px)"
             defaultLanguage="opensbp"
-            theme="sbp-light"        // try 'vs' | 'sbp-light' | 'sbp-dark'
+            theme="sbp-light"
             value={code}
             beforeMount={handleBeforeMount}
             onChange={(v) => setCode(v ?? "")}
@@ -461,7 +525,7 @@ export default function FabMoOpenSBPApp() {
           />
         </div>
 
-        {/* Edge tabs */}
+        {/* Edge tabs (to re-open panes) */}
         {collapsedLeft && (
           <button className="edge-tab" style={{ left: 6 }} onClick={expandLeft} title="Show UI">» UI</button>
         )}
@@ -480,19 +544,23 @@ const DEFAULT_SNIPPET = `' Shape Cutting App
 ' A toolkit of simple cutters
 
 ' #Circle Cutter
-' @input &Radius type=number min=0.1 max=48 step=0.01 label="Radius (in)" default=1.5
-' @input &FeedRate type=number default=120
+' @input &Radius    type=number min=0.1 max=48 step=0.01 label="Radius (in)" default=1.5
+' @input &FeedRate  type=number default=120
+' @checkmark $RanCircle
 MS, &FeedRate
 JZ, 0.25
 ' ... circle code using &Radius ...
+' (your SBP could set $RanCircle = 1 when complete)
 PAUSE "Circle complete"
 
 ' #Rectangle Cutter
 ' @input &Length type=number default=4
 ' @input &Width  type=number default=2
 ' @input &Depth  type=number default=0.125
+' @checkmark $RanRectangle
 MS, &FeedRate
 JZ, 0.25
 ' ... rectangle code using &Length &Width &Depth ...
+' (your SBP could set $RanRectangle = 1 when complete)
 PAUSE "Rectangle complete"
 `;
